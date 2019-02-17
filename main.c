@@ -20,9 +20,9 @@
 
 void usage(const char* program);
 
-void eventLoop(int epoll_fd, int server_fd);
+void eventLoop(int epoll_fd, int server_fd, const size_t bufLen);
 
-bool clearSocket(int socket, char* buf, int len);
+bool clearSocket(int socket, char* buf, const size_t len);
 
 /*
  * Creates the server's listening socket and start the event loop
@@ -30,22 +30,41 @@ bool clearSocket(int socket, char* buf, int len);
 int main(int argc, char** argv) {
 	int status;
 	int server_fd;
+	char* port = "7000"; // default port
+	size_t bufLen = BUFSIZE; // default buffer size
 
 	int epoll_fd;
 	struct epoll_event event;
 
 	// TODO: Add signal handler for SIGTERM
-	struct sigaction act;
 
-
-	if (argc != 2) {
-		usage(argv[0]);
-		exit(1);
+	// Parse the command line arguments
+	int c;
+	int p;
+	while ((c = getopt(argc, argv, "p:b:")) != -1) {
+		switch (c) {
+			case 'p':
+				// hack
+				p = strtol(optarg, NULL, 10);
+				if (p < 1000) {
+					usage(argv[10]);
+					exit(1);
+				}
+				port = optarg;
+				break;
+			case 'b':
+				bufLen = strtoul(optarg, NULL , 10);
+				break;
+			default:
+				usage(argv[0]);
+				exit(1);
+		}
 	}
 
 	printf("Starting the server\n");
+	printf("Port: %s\nBuffer length: %lu\n", port, bufLen);
 
-	server_fd = getListenableSocket(argv[1]);
+	server_fd = getListenableSocket(port);
 
 	status = listen(server_fd, 10);
 	if (status == -1) {
@@ -66,17 +85,17 @@ int main(int argc, char** argv) {
 	}
 
 	// Start the event loop
-	eventLoop(epoll_fd, server_fd);
+	eventLoop(epoll_fd, server_fd, bufLen);
 
 	// Cleanup
 	close(server_fd);
 }
 
 void usage(const char* program) {
-	printf("Usage: %s -p [port]\n", program);
+	fprintf(stderr, "Usage: %s -p [port] -b [buffer size]\n", program);
 }
 
-void eventLoop(int epoll_fd, int server_fd) {
+void eventLoop(int epoll_fd, int server_fd, const size_t bufLen) {
 	const int MAX_EVENTS = 256;
 	struct epoll_event current_event, event;
 	int n_ready;
@@ -84,6 +103,7 @@ void eventLoop(int epoll_fd, int server_fd) {
 	struct sockaddr_storage remote_addr;
 	socklen_t addr_len;
 
+	char* buffer = calloc(bufLen, sizeof (char));
 	struct epoll_event *events = calloc(MAX_EVENTS, sizeof(struct epoll_event));
 
 	while (true) {
@@ -95,7 +115,6 @@ void eventLoop(int epoll_fd, int server_fd) {
 		// A file descriptor is ready
 		for (int i = 0; i < n_ready; ++i) {
 			int client_fd;
-			char buffer[BUFSIZE];
 			current_event = events[i];
 			// An error or hangup occurred
 			if (current_event.events & (EPOLLHUP | EPOLLERR)) {
@@ -131,14 +150,21 @@ void eventLoop(int epoll_fd, int server_fd) {
 				printf("Connection from %s:%s\n", host, serv);
 				continue;
 			} 
-			if (!clearSocket(current_event.data.fd, buffer, BUFSIZE)) { // One of the sockets has data to read
+			if (!clearSocket(current_event.data.fd, buffer, bufLen)) { // One of the sockets has data to read
 				close(current_event.data.fd);
 			}
 		}
 	}
+
+	if (events) {
+		free(events);
+	}
+	if (buffer) {
+		free(buffer);
+	}
 }
 
-bool clearSocket(int socket, char* buf, int len) {
+bool clearSocket(int socket, char* buf, const size_t len) {
 	int n = 0;
 	int bytesLeft = len;
 	char *bp;
@@ -147,7 +173,7 @@ bool clearSocket(int socket, char* buf, int len) {
 		bp = buf;
 		while (n < len) {
 			n = recv(socket, bp, bytesLeft, 0);
-			if (errno == EAGAIN) {
+			if (errno == EAGAIN || n == 0) { // need this for edge-triggered mode
 				break;
 			}
 			bp += n;
@@ -155,7 +181,6 @@ bool clearSocket(int socket, char* buf, int len) {
 		}
 		printf("sending: %s\n", buf);
 		send(socket, buf, len, 0);
-		close(socket);
 		return true;
 	}
 	close(socket);
