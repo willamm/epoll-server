@@ -18,6 +18,12 @@
 
 #define BUFSIZE 100
 
+typedef struct {
+	int nRequests;
+	int nTransferred;
+	struct sockaddr_storage* addr;
+} client;
+
 void usage(const char* program);
 
 void eventLoop(int epoll_fd, int server_fd, const size_t bufLen);
@@ -89,6 +95,7 @@ int main(int argc, char** argv) {
 
 	// Cleanup
 	close(server_fd);
+	close(epoll_fd);
 }
 
 void usage(const char* program) {
@@ -117,6 +124,7 @@ void eventLoop(int epoll_fd, int server_fd, const size_t bufLen) {
 			int client_fd;
 			current_event = events[i];
 			// An error or hangup occurred
+			// Client might have closed their side of the connection
 			if (current_event.events & (EPOLLHUP | EPOLLERR)) {
 				fprintf(stderr, "epoll: EPOLLERR or EPOLLHUP\n");
 				continue;
@@ -174,13 +182,17 @@ bool clearSocket(int socket, char* buf, const size_t len) {
 		while (n < len) {
 			n = recv(socket, bp, bytesLeft, 0);
 			if (errno == EAGAIN || n == 0) { // need this for edge-triggered mode
-				break;
+				return false;
 			}
 			bp += n;
 			bytesLeft -= n;
 		}
 		printf("sending: %s\n", buf);
-		send(socket, buf, len, 0);
+		n = send(socket, buf, len, 0);
+		if (n == -1) {
+			// client closed the connection
+			return false;
+		}
 		return true;
 	}
 	close(socket);
