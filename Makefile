@@ -3,7 +3,7 @@ OBJECTS := $(SOURCES:.c=.o)
 ASSEMBLY := $(SOURCES:.c=.s) # assembly files
 POSTPROC := $(SOURCES:.c=.i) # files created by postprocessor
 
-CFLAGS += -ggdb -Wall -Werror -save-temps
+CFLAGS += -ggdb -Wall -Werror
 
 .PHONY: all clean
 
@@ -16,4 +16,4 @@ server: $(OBJECTS)
 	$(CC) $(CFLAGS) -o $@ -c $^
 
 clean:
-	rm $(OBJECTS) $(ASSEMBLY) $(POSTPROC) server
+	rm -f $(OBJECTS) $(ASSEMBLY) $(POSTPROC) server

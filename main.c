@@ -42,8 +42,6 @@ int main(int argc, char** argv) {
 	int epoll_fd;
 	struct epoll_event event;
 
-	// TODO: Add signal handler for SIGTERM
-
 	// Parse the command line arguments
 	int c;
 	int p;
@@ -81,7 +79,7 @@ int main(int argc, char** argv) {
 	if (epoll_fd == -1) {
 		errExit("epoll_create1: %s\n", strerror(errno));
 	}
-	
+
 	// Register the server socket for epoll events
 	event.data.fd = server_fd;
 	event.events = EPOLLIN | EPOLLET;
